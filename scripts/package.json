@@ -1,0 +1,7 @@
+{
+  "name": "visun-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for Visun project",
+  "type": "module",
+  "private": true
+}

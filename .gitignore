@@ -1,0 +1,54 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing
+coverage
+
+# Next.js
+.next/
+out/
+build
+.swc/
+
+# Misc
+.DS_Store
+*.pem
+.vscode
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env*.local
+
+# Vercel
+.vercel
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+dist/
+
+# Media
+manim-service/media
+
+# Temporary files
+tmp/
+.tmp/
+
+# Supabase
+.branches
+.temp

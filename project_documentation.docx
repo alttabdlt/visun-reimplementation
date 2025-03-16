@@ -1,0 +1,553 @@
+# Visun (Chat Animation Hub) Project Documentation
+
+## Overview
+Visun (formerly "Render") is a Next.js-based application that generates mathematical animations for chat messages. The system integrates with the Manim animation engine to create visualizations based on user prompts.
+
+## System Architecture
+
+### Core Components
+
+1. **Next.js Frontend (Visun)**
+   - Main web application
+   - Handles user authentication, chat interface, and animation display
+   - Located in `/visun` directory
+   - Running on localhost:3001 in development
+
+2. **Supabase Backend**
+   - Authentication system
+   - Database storage for user data, chat messages, and animation metadata
+   - Edge Functions for serverless processing
+
+3. **Manim Service**
+   - Cloud Run service for animation generation
+   - Receives Python code and generates MP4 animations
+   - Located at `https://manim-service-589284378993.us-central1.run.app`
+
+4. **Edge Functions**
+   - Serverless functions for processing requests between frontend and Manim service
+   - Handle animation generation, code execution, and query processing
+
+## Core Files and Directories
+
+### Frontend (Visun)
+
+1. **Main App Files**
+   - `/visun/src/app/page.tsx` - Home page
+   - `/visun/src/app/chat/page.tsx` - Chat interface
+   - `/visun/src/app/layout.tsx` - Main layout wrapper
+
+2. **Component Files**
+   - `/visun/src/components/ChatMessage.tsx` - Chat message component with animation handling
+   - `/visun/src/components/Header.tsx` - Site header with navigation
+   - `/visun/src/components/AnimationPlayer.tsx` - Component for displaying animations
+
+3. **Authentication**
+   - `/visun/src/lib/auth.ts` - Authentication utilities
+   - `/visun/src/app/login/page.tsx` - Login page
+   - `/visun/src/app/signup/page.tsx` - Signup page
+
+4. **State Management**
+   - `/visun/src/lib/store.ts` - Application state management
+
+### Supabase Edge Functions
+
+1. **Animation Generation**
+   - `/supabase/functions/generate-animation/index.ts` - Handles processing chat messages to generate animation code
+
+2. **Manim Code Execution**
+   - `/supabase/functions/execute-manim/index.ts` - Sends Manim code to the Manim service for rendering
+
+3. **Query Processing**
+   - `/supabase/functions/process-query/index.ts` - Processes user queries
+
+4. **Embedding Generation**
+   - `/supabase/functions/generate-embedding/index.ts` - Creates embeddings for semantic search
+
+### Manim Service
+
+1. **Core Service Files**
+   - `/manim-service/main.py` - Main entry point for the Manim service
+   - `/manim-service/executor.py` - Executes Manim code
+   - `/manim-service/Dockerfile` - Container configuration
+
+2. **Support Files**
+   - `/manim-service/requirements.txt` - Python dependencies
+   - `/manim-service/logs/` - Log directory
+
+## Supabase Edge Functions - Detailed Implementation
+
+### Overview of Edge Functions
+Supabase Edge Functions are serverless functions that run on Deno, deployed on the edge. In the Visun project, these functions serve as the critical middleware between the Next.js frontend and the Manim service running on Google Cloud.
+
+### Location and Structure
+- Base directory: `/supabase/functions/`
+- Each function is in its own subdirectory with an `index.ts` file
+
+### Key Edge Functions
+
+1. **generate-animation**
+   - **Path**: `/supabase/functions/generate-animation/index.ts`
+   - **Purpose**: Processes chat messages and generates Manim code
+   - **Invocation**: Called from the frontend when a new assistant message requires animation
+   - **Flow**:
+     1. Receives a message ID from the frontend
+     2. Retrieves the message content from the Supabase database
+     3. Generates Manim Python code using OpenAI or a fine-tuned model
+     4. Checks for similar existing animations in the animation cache
+     5. If no cache hit, calls the `execute-manim` function
+     6. Updates the database with animation status and URL
+
+2. **execute-manim**
+   - **Path**: `/supabase/functions/execute-manim/index.ts`
+   - **Purpose**: Sends Manim code to the Google Cloud Manim service for rendering
+   - **Invocation**: Called by the `generate-animation` function
+   - **Flow**:
+     1. Performs health check on the Manim service
+     2. Sends Manim code to the service
+     3. Receives animation URL or error
+     4. Returns result to the calling function
+
+3. **process-query**
+   - **Path**: `/supabase/functions/process-query/index.ts`
+   - **Purpose**: Processes user queries before sending to the AI model
+   - **Invocation**: Called from the frontend when a user sends a message
+
+4. **generate-embedding**
+   - **Path**: `/supabase/functions/generate-embedding/index.ts`
+   - **Purpose**: Creates embeddings for semantic search in the animation cache
+   - **Invocation**: Called after animation generation to enable similarity search
+
+### Deployment and Management
+- Functions are deployed using the Supabase CLI:
+  ```bash
+  cd supabase
+  npx supabase functions deploy [function-name] --no-verify-jwt
+  ```
+- Configuration is stored in environment variables within the Supabase dashboard
+- Logs can be viewed in the Supabase dashboard or via CLI:
+  ```bash
+  npx supabase functions logs [function-name]
+  ```
+
+### Edge Function Communication
+- Edge functions use the Supabase JavaScript client to interact with the database
+- HTTP fetch API is used for external service calls
+- CORS headers are configured to allow cross-origin requests from the frontend
+
+## Google Cloud Console Implementation
+
+### Manim Service Architecture
+The Manim service is a containerized application running on Google Cloud Run with these components:
+
+1. **Service URL**: `https://manim-service-589284378993.us-central1.run.app`
+2. **Project ID**: Located in the Google Cloud Console under your project
+3. **Container Registry**: Stores the Docker image for the Manim service
+
+### Service Endpoints
+
+1. **Root Endpoint (`/`)**
+   - Returns a simple 200 status to indicate the service is running
+   - Used for health checks by the Supabase edge functions
+
+2. **Execute Manim Endpoint (`/execute-manim`)**
+   - **Method**: POST
+   - **Input**: JSON object with Manim Python code and a message ID
+   - **Output**: JSON object with animation URL and metadata
+   - **Flow**:
+     1. Receives Manim code from the `execute-manim` edge function
+     2. Runs the code in a sandboxed environment using Manim
+     3. Generates an MP4 animation file
+     4. Uploads the file to Google Cloud Storage
+     5. Returns a public URL to the animation
+
+3. **Placeholder Animation (`/placeholder-animation.mp4`)**
+   - Static animation file used when generation fails or service is unavailable
+
+### Cloud Run Configuration
+- **Memory**: 2GB (configurable in Google Cloud Console)
+- **CPU**: 1 vCPU (configurable in Google Cloud Console)
+- **Timeout**: 5 minutes for animation rendering
+- **Concurrency**: 80 requests per container
+
+### Google Cloud Storage
+- Animation files are stored in a GCS bucket
+- Public access is configured for direct URL links
+- Files are organized by message ID for easy retrieval
+
+### Monitoring and Logging
+- Cloud Run provides built-in logging for the Manim service
+- Logs are viewable in the Google Cloud Console
+- Custom logs are output by the Manim service and captured in Cloud Logging
+- `/manim-service/logs/` contains local log copies during development
+
+### Service Deployment
+The Manim service is deployed using Google Cloud Build:
+
+1. Code is stored in `/manim-service/` directory
+2. Dockerfile defines the container configuration
+3. Service is built and deployed to Cloud Run using:
+   ```bash
+   gcloud builds submit --tag gcr.io/[PROJECT_ID]/manim-service
+   gcloud run deploy --image gcr.io/[PROJECT_ID]/manim-service --platform managed
+   ```
+
+## Integration Between Supabase and Google Cloud
+
+### Authentication Flow
+1. Supabase Edge Functions use service-role credentials to access the database
+2. No authentication is currently implemented between Edge Functions and the Manim service
+3. Future improvement: Add authentication between services using API keys or JWT
+
+### Data Flow
+1. User message → Next.js Frontend → Supabase Database
+2. Message ID → `generate-animation` Edge Function → Manim Code Generation
+3. Manim Code + Message ID → `execute-manim` Edge Function → Google Cloud Manim Service
+4. Animation Rendering → Google Cloud Storage → Animation URL
+5. Animation URL → Supabase Database → Next.js Frontend → User Display
+
+### Error Handling
+1. If the Manim service is unavailable, the edge function returns a placeholder animation
+2. If code generation fails, an error status is stored in the database
+3. If animation rendering fails, an error message is returned to the edge function
+
+## Implementation Challenges and Solutions
+
+### Cross-Service Communication
+- **Challenge**: Ensuring reliable communication between Supabase and Google Cloud
+- **Solution**: Implement robust health checks and error handling
+
+### Service Availability
+- **Challenge**: Detecting when the Manim service is down
+- **Solution**: Multi-endpoint health checks with fallbacks
+
+### Long-Running Operations
+- **Challenge**: Edge Functions have execution time limits
+- **Solution**: Background processing pattern with status updates
+
+### Performance Optimization
+- **Challenge**: Animation generation can be slow
+- **Solution**: Caching similar animations and implementing a RAG system
+
+## Database Schema
+
+### Tables
+
+1. **users** - User information (managed by Supabase Auth)
+
+2. **chat_sessions**
+   - `session_id` (Primary Key)
+   - `user_id` (Foreign Key to users)
+   - `first_message` (Text)
+   - `created_at` (Timestamp)
+
+3. **chat_messages**
+   - `id` (Primary Key)
+   - `session_id` (Foreign Key to chat_sessions)
+   - `content` (Text)
+   - `role` (Text: 'user' or 'assistant')
+   - `animation_status` (Text: null, 'processing', 'completed', 'error')
+   - `created_at` (Timestamp)
+
+4. **animation_cache**
+   - `id` (Primary Key)
+   - `message_id` (Foreign Key to chat_messages)
+   - `code` (Text - Manim code)
+   - `url` (Text - Animation URL)
+   - `created_at` (Timestamp)
+
+5. **animation_embeddings**
+   - `id` (Primary Key)
+   - `message_id` (Foreign Key to chat_messages)
+   - `embedding` (Vector)
+   - `created_at` (Timestamp)
+
+## Sequential Processing Flow
+
+### User Message Flow
+
+1. User sends a message in the chat interface
+2. Message is stored in the database (`chat_messages` table)
+3. Frontend sends the message to OpenAI API for response
+4. Assistant response is stored in the database
+5. If animation is required:
+   - Frontend calls the `generate-animation` edge function
+   - Animation status is set to 'processing'
+   - Function processes the message content
+   - Function generates Manim code using OpenAI or a fine-tuned model
+   - Function checks the animation cache for similar existing animations
+   - If no cache hit, function calls the `execute-manim` edge function
+   - `execute-manim` sends the code to the Manim service
+   - Manim service generates animation and returns a URL
+   - Animation URL is stored in the database
+   - Animation status is updated to 'completed'
+   - Frontend displays the animation
+
+### Health Check System
+
+1. Before sending code to the Manim service, the edge functions perform health checks
+2. Health checks verify if the Manim service is available
+3. If health checks fail, a placeholder animation is shown
+4. Current implementation has issues with health check endpoints
+
+## Known Issues and Areas for Improvement
+
+1. **Health Check System**
+   - Current implementation looks for `/health` or `/health-check` endpoints that don't exist
+   - Should use root URL (`/`) for health checks
+   - Should implement multiple fallback endpoints
+
+2. **Error Handling**
+   - Inconsistent error handling across functions
+   - Limited user feedback for errors
+
+3. **Animation Generation**
+   - Reliability issues with the animation generation process
+   - Timeouts during long-running animation generation
+
+4. **Performance**
+   - Potential bottlenecks in the animation generation process
+   - No caching strategy for frequently requested animations
+
+5. **Code Organization**
+   - Inconsistent TypeScript usage
+   - Limited documentation and type definitions
+
+## Tools and Technologies
+
+1. **Frontend**
+   - Next.js 15.2.0
+   - React
+   - TypeScript
+   - TailwindCSS
+
+2. **Backend**
+   - Supabase (Authentication, Database, Edge Functions)
+   - PostgreSQL
+   - Deno (for Edge Functions)
+
+3. **Animation**
+   - Manim (Mathematical Animation Engine)
+   - Python
+   - Google Cloud Run
+
+4. **Development**
+   - npm
+   - Git
+   - Supabase CLI
+
+## Deployment
+
+1. **Frontend**
+   - Development: `npm run dev` (localhost:3001)
+   - Production: Deployed to Vercel or similar
+
+2. **Edge Functions**
+   - Deployed using Supabase CLI:
+     ```
+     npx supabase functions deploy [function-name] --no-verify-jwt
+     ```
+
+3. **Manim Service**
+   - Deployed to Google Cloud Run
+   - Container-based deployment
+
+## Authentication Flow
+
+1. User signs up or logs in through the Supabase authentication system
+2. JWT token is stored in browser localStorage
+3. Token is used for API requests to Supabase
+4. User settings (including dark mode preference) are stored in both localStorage and Supabase
+
+## Vercel Implementation Strategy
+
+### Current Architecture (Google Cloud Run)
+
+The current system architecture relies on multiple separate services:
+
+1. **Next.js Frontend (Visun)**
+   - Runs on localhost:3001 during development
+   - Handles UI, authentication, and chat interface
+
+2. **Supabase Edge Functions**
+   - Act as middleware between frontend and Manim service
+   - Handle animation generation logic and code execution
+   - Run on Deno runtime in Supabase's infrastructure
+
+3. **Manim Service (Google Cloud Run)**
+   - Separate containerized service
+   - Executes Manim Python code to generate animations
+   - Stores animations in Google Cloud Storage
+   - Accessible at `https://manim-service-589284378993.us-central1.run.app`
+
+4. **Google Cloud Storage**
+   - Stores animation files
+   - Provides public URLs for animations
+
+#### Current Data Flow
+
+```
+┌───────────┐      ┌──────────────────┐      ┌───────────────┐      ┌──────────────┐
+│  Next.js  │─────►│  Supabase Edge   │─────►│  Manim Service │─────►│  GCS Storage │
+│ Frontend  │◄─────│    Functions     │◄─────│  (Cloud Run)   │◄─────│              │
+└───────────┘      └──────────────────┘      └───────────────┘      └──────────────┘
+```
+
+### New Architecture (Vercel + Supabase)
+
+The new architecture moves the Manim execution to Vercel while keeping Supabase for authentication and data storage:
+
+1. **Existing Next.js Frontend (Visun)**
+   - Keep the existing frontend intact
+   - Continue using Supabase for authentication and data storage
+   - Frontend communicates with both Supabase and new Vercel API routes
+
+2. **Supabase**
+   - Still used for authentication and database
+   - Continues to store user data, chat messages, and metadata
+   - Edge functions replaced with Vercel API routes for animation processing
+
+3. **Vercel API Routes**
+   - New API routes that handle Manim code execution
+   - Replace functionality of Supabase Edge Functions and Google Cloud Run
+   - Host the Python environment needed for Manim
+
+4. **Vercel Blob Storage / Supabase Storage**
+   - Replaces Google Cloud Storage
+   - Stores animation files
+   - Provides public URLs for animations
+
+5. **Background Processing (Optional)**
+   - Handles long-running animations exceeding Vercel's timeout limits
+   - Could use a separate service or Vercel Cron Jobs
+
+#### New Data Flow
+
+```
+┌───────────┐      ┌──────────────────────┐
+│  Existing │      │     Supabase         │
+│  Next.js  │◄────►│  (Auth & Database)   │
+│ Frontend  │      └──────────────────────┘
+└─────┬─────┘
+      │
+      │      ┌────────────────────────────┐      ┌────────────────┐
+      └─────►│ Vercel API Routes          │─────►│ Vercel Blob or │
+             │ (Manim Code Execution)     │◄─────│ Supabase Storage│
+             └────────────────┬───────────┘      └────────────────┘
+                              │
+                              ▼
+                   ┌────────────────────────┐
+                   │ Background Processing  │
+                   │  (Optional - for      │
+                   │  complex animations)   │
+                   └────────────────────────┘
+```
+
+### Implementation Steps
+
+#### 1. Create Next.js API Routes
+
+Add the following API routes to a new Vercel project (separate from your existing Next.js app):
+
+- `/api/execute-manim` - Executes Manim code
+- `/api/generate-animation` - Handles animation generation logic
+- `/api/animation-status/[id]` - Checks animation status
+- `/api/health` - Health check endpoint
+
+#### 2. Configure Vercel Settings
+
+Create Vercel configuration in your new project with appropriate memory and timeout settings for Manim execution.
+
+#### 3. Implement Animation Storage
+
+Set up Vercel Blob Storage or continue using Supabase Storage for animation files.
+
+#### 4. Migrate Animation Generation Logic
+
+Transfer the animation generation logic from Supabase Edge Functions to Vercel API routes. Modify the API routes to interact with your existing Supabase database.
+
+#### 5. Update Supabase Configuration
+
+Update your Supabase configuration to point to the new Vercel endpoints instead of the Google Cloud Run service.
+
+#### 6. Keep the Existing Frontend
+
+The existing frontend can remain unchanged except for:
+- Updating API endpoints to point to Vercel instead of Supabase Edge Functions
+- Maintaining the existing Supabase authentication and database connections
+
+#### 7. Create Background Processing (For Complex Animations)
+
+For animations exceeding Vercel's timeout limits, implement a background processor through Vercel Cron Jobs or a separate service.
+
+#### 8. Deployment and Testing
+
+1. Deploy the Vercel API routes first
+2. Test the API routes independently
+3. Update the existing frontend to use the new API endpoints
+4. Deploy the updated frontend
+5. Test the entire flow from frontend to animation rendering
+
+### Continued Use of Supabase
+
+Supabase will still be central to the application for:
+
+1. **Authentication**
+   - User signup, login, and session management remains unchanged
+   - JWT tokens continue to secure API requests
+
+2. **Database**
+   - Storing user data, chat messages, threads, and settings
+   - Tracking animation status and metadata
+   - Maintaining relationships between messages and animations
+
+3. **Storage (Optional)**
+   - Can still use Supabase Storage for animations instead of Vercel Blob
+   - Maintains consolidation of assets with other application data
+
+The key change is moving the Manim execution from Google Cloud Run to Vercel API routes while preserving all other aspects of your existing system.
+
+### Challenges and Solutions
+
+#### Challenge: Vercel Execution Limits (60s maximum)
+
+**Solutions:**
+- Pre-compute common animations
+- Implement animation caching
+- Use a hybrid approach with background processing for complex animations
+- Optimize Manim code for faster execution
+
+#### Challenge: Running Manim in Serverless Environment
+
+**Solutions:**
+- Create a custom Vercel builder with Manim dependencies
+- Use a lightweight Manim implementation
+- Pre-render common animations and store results
+
+#### Challenge: Minimal Frontend Changes
+
+**Solutions:**
+- Use API configuration variables to make endpoint switching seamless
+- Implement feature flags to gradually transition functionality
+- Maintain backward compatibility during the transition
+
+### Advantages of the Vercel Approach
+
+1. **Simplified Architecture**
+   - Fewer services to manage
+   - Unified deployment for animation processing
+   - Streamlined debugging and monitoring
+
+2. **Cost Optimization**
+   - No separate Google Cloud Run costs
+   - Predictable pricing model
+   - Free tier available for development
+
+3. **Keeping Existing Frontend**
+   - Minimal disruption to user experience
+   - No need to reimplement frontend components
+   - Preserves existing Supabase integration
+
+4. **Global Edge Network**
+   - Fast response times worldwide
+   - Automatic CDN for animations
+   - Improved user experience
