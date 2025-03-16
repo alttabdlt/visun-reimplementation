@@ -17,9 +17,10 @@ interface ChatMessageProps {
     animation_status: string | null
     animation_error: string | null
   }
+  isUser?: boolean
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, isUser }: ChatMessageProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [animationStatus, setAnimationStatus] = useState(message.animation_status)
   const [animationUrl, setAnimationUrl] = useState(message.animation_url)

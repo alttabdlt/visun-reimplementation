@@ -1,20 +1,57 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Settings, LogOut } from "lucide-react"
+import Link from "next/link"
+import { Settings, LogOut, PlusSquare } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import ChatSidebar from "@/components/ChatSidebar" 
 import { toast } from "react-hot-toast"
 
-interface HeaderProps {
-  user: any
-}
-
-export default function Header({ user }: HeaderProps) {
+export default function Header() {
   const router = useRouter()
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    const checkUser = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser()
+        
+        if (!error && data.user) {
+          setUser(data.user)
+        }
+      } catch (error) {
+        console.error("Error checking user:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    checkUser()
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === "SIGNED_OUT") {
+          setUser(null)
+          router.push("/auth/login")
+        } else if (session) {
+          setUser(session.user)
+        }
+      }
+    )
+    
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [router])
+
+  const handleNewChat = () => {
+    router.push("/chat")
+  }
 
   const handleSignOut = async () => {
     try {
@@ -33,52 +70,66 @@ export default function Header({ user }: HeaderProps) {
   }
 
   return (
-    <header className="border-b bg-card px-4 py-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Visun</h1>
+    <header className="border-b bg-background/90 backdrop-blur-sm px-4 py-3 sticky top-0 z-10">
+      <div className="container mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/" className="text-2xl font-bold tracking-tight hover:opacity-80 transition-opacity">
+            Visun
+          </Link>
+          
+          {user && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSidebarOpen(true)}
+              className="hidden md:flex items-center gap-1"
+            >
+              <span>Your Chats</span>
+            </Button>
+          )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
+          {user && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleNewChat}
+                title="New Chat"
+              >
+                <PlusSquare className="h-5 w-5" />
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => router.push("/settings")}
+                title="Settings"
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSignOut}
+                title="Sign Out"
+              >
+                <LogOut className="h-5 w-5" />
+              </Button>
+            </>
+          )}
+          
           <ThemeToggle />
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-            className="h-9 w-9 rounded-md"
-            aria-label="Settings"
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleSignOut}
-            className="h-9 w-9 rounded-md"
-            aria-label="Sign out"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
         </div>
       </div>
       
-      {isSettingsOpen && (
-        <div className="mt-2 rounded-md border bg-background p-4 shadow-sm">
-          <h2 className="mb-2 font-medium">Settings</h2>
-          
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Account: {user?.email}</span>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Theme</span>
-              <ThemeToggle />
-            </div>
-          </div>
-        </div>
+      {user && (
+        <ChatSidebar 
+          open={sidebarOpen} 
+          onClose={() => setSidebarOpen(false)} 
+        />
       )}
     </header>
   )

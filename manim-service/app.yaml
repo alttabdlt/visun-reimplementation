@@ -1,5 +1,0 @@
-runtime: python39
-entrypoint: gunicorn -b :$PORT wsgi:app
-
-env_variables:
-  PORT: "8080" 

@@ -6,7 +6,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const messageId = params.id;
+    // Extract message ID safely from params
+    const messageId = params?.id;
     
     if (!messageId) {
       return NextResponse.json({ 
@@ -31,17 +32,18 @@ export async function GET(
       }, { status: 500 });
     }
     
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json({ 
+      success: true, 
       status: data.animation_status,
-      url: data.animation_url,
-      error: data.animation_error
+      url: data.animation_url || null,
+      error: data.animation_error || null
     });
+    
   } catch (error) {
-    console.error('Error in animation-status:', error);
+    console.error('Error in animation status API:', error);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: 'Internal server error' 
     }, { status: 500 });
   }
 }

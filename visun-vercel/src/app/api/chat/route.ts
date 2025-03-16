@@ -14,9 +14,9 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { chatId, message, userId } = await request.json();
+    const { session_id, message } = await request.json();
     
-    if (!chatId || !message || !userId) {
+    if (!session_id || !message) {
       return NextResponse.json({ 
         success: false, 
         error: 'Missing required parameters' 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const { data: previousMessages, error: messagesError } = await supabase
       .from('chat_messages')
       .select('role, content')
-      .eq('chat_id', chatId)
+      .eq('session_id', session_id)
       .order('created_at', { ascending: true })
       .limit(20); // Limit to recent messages for context
     
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       .from('chat_messages')
       .insert({
         id: messageId,
-        chat_id: chatId,
+        session_id: session_id,
         role: 'assistant',
         content: aiResponse,
         created_at: new Date().toISOString(),
@@ -96,54 +96,61 @@ export async function POST(request: NextRequest) {
     const { data: messagesCount, error: countError } = await supabase
       .from('chat_messages')
       .select('id', { count: 'exact' })
-      .eq('chat_id', chatId);
+      .eq('session_id', session_id);
     
     if (!countError && messagesCount && messagesCount.length <= 3) {
-      // Generate a title based on the first user message
-      const title = generateChatTitle(message);
-      await supabase
+      // Generate a title from the first user message
+      const chatTitle = generateChatTitle(message);
+      
+      // Update the chat title
+      const { error: updateError } = await supabase
         .from('chat_sessions')
-        .update({ title })
-        .eq('id', chatId);
+        .update({ title: chatTitle })
+        .eq('id', session_id);
+      
+      if (updateError) {
+        console.error('Error updating chat title:', updateError);
+      }
     }
     
-    // Trigger animation generation in the background
-    try {
-      await fetch(new URL('/api/generate-animation', request.url).toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messageId
-        }),
-      });
-    } catch (error) {
-      // Don't fail the request if animation generation fails
-      console.error('Error triggering animation generation:', error);
+    // Queue animation generation
+    const animationResponse = await fetch(`${request.nextUrl.origin}/api/generate-animation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId,
+        content: aiResponse
+      }),
+    });
+    
+    if (!animationResponse.ok) {
+      console.error('Error queueing animation generation:', await animationResponse.text());
     }
     
-    return NextResponse.json({
+    return NextResponse.json({ 
       success: true,
       messageId,
       content: aiResponse
     });
+    
   } catch (error) {
     console.error('Error in chat API:', error);
     return NextResponse.json({ 
       success: false, 
-      error: error.message || 'An error occurred' 
+      error: 'Internal server error' 
     }, { status: 500 });
   }
 }
 
-/**
- * Generates a chat title based on the first user message
- */
+// Generates a chat title based on the first user message
 function generateChatTitle(message: string): string {
-  // Truncate to reasonable length
-  if (message.length > 50) {
-    return message.slice(0, 47) + '...';
-  }
-  return message;
+  // Truncate to first 40 chars or first sentence, whichever is shorter
+  const firstSentence = message.split(/[.!?]/, 1)[0].trim();
+  const truncated = firstSentence.length > 40 
+    ? firstSentence.substring(0, 37) + '...' 
+    : firstSentence;
+  
+  return truncated;
 }
